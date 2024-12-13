@@ -61,7 +61,7 @@ endif
 
 # riscv64-unknown-elf- or riscv64-linux-gnu-
 # perhaps in /opt/riscv/bin
-#TOOLPREFIX = 
+#TOOLPREFIX =
 
 # Try to infer the correct TOOLPREFIX if not set
 ifndef TOOLPREFIX
@@ -194,6 +194,11 @@ UPROGS=\
 	$U/_grind\
 	$U/_wc\
 	$U/_zombie\
+	$U/_sleep\
+	$U/_pingpong\
+	$U/_find\
+	$U/_xargs\
+	$U/_primes\
 
 
 
