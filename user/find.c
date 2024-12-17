@@ -19,12 +19,8 @@ int cmp_file_name(char* path, char* file_name)
     }
 
     char* pptr = path + path_len;
-    while (*pptr != '/' && pptr != path) {
+    while (pptr != path && *(pptr - 1) != '/') {
         --pptr;
-    }
-
-    if (*pptr == '/') {
-        ++pptr;
     }
 
     char* fptr = file_name;
