@@ -67,6 +67,7 @@ int search(char* path, char* file_name)
         if (n < 0) {
             fprintf(2, "read error.\n");
             free(buf);
+            close(fd);
             return -1;
         }
         // reaching here, `buf` full of the directory file
