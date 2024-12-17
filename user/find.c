@@ -9,7 +9,7 @@
 #define BUF_SIZE 512
 
 /* if same file name return 1 , else return 0 */
-int compare_file_name(char* path, char* file_name)
+int cmp_file_name(char* path, char* file_name)
 {
     uint path_len = strlen(path);
     uint file_name_len = strlen(file_name);
@@ -18,7 +18,15 @@ int compare_file_name(char* path, char* file_name)
         return 0;
     }
 
-    char* pptr = path + path_len - file_name_len;
+    char* pptr = path + path_len;
+    while (*pptr != '/' && pptr != path) {
+        --pptr;
+    }
+
+    if (*pptr == '/') {
+        ++pptr;
+    }
+
     char* fptr = file_name;
     while (*pptr == *fptr) {
         if (*pptr == '\0') {
@@ -34,6 +42,10 @@ int search(char* path, char* file_name)
 {
     struct stat st;
     int fd;
+
+    if (cmp_file_name(path, file_name)) { /* when file name match */
+        fprintf(1, "%s\n", path);
+    }
 
     if ((fd = open(path, O_RDONLY)) < 0) {
         fprintf(2, "find: cannot open %s\n", path);
@@ -92,10 +104,6 @@ int search(char* path, char* file_name)
         free(buf);
         close(fd);
         return 0;
-    } else if (st.type == T_FILE) {
-        if (compare_file_name(path, file_name)) { /* when file name match */
-            fprintf(1, "%s\n", path);
-        }
     }
 
     close(fd);
