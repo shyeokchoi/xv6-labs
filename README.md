@@ -14,7 +14,8 @@ Course Link: [MIT 6.1810 (2024 Fall)](https://pdos.csail.mit.edu/6.1810/2024/)
 
 ## Labs Overview
 
-| Number | Lab Name     | Date of the Session | Solution Slide Link                  |
-| ------ | ------------ | ------------------- | ------------------------------------ |
-| 1      | Utilities    | 2024-12-17          | [Link](slides/lab1-utilities.pdf)    |
-| 2      | System Calls | 2024-12-30          | [Link](slides/lab2-system-calls.pdf) |
+| Number | Lab Name     | Branch Name | Date of the Session | Solution Slide Link                  |
+| ------ | ------------ | ----------- | ------------------- | ------------------------------------ |
+| 1      | Utilities    | `util`      | 2024-12-17          | [Link](slides/lab1-utilities.pdf)    |
+| 2      | System Calls | `syscall`   | 2024-12-30          | [Link](slides/lab2-system-calls.pdf) |
+| 3      | Page Tables  | `pgtbl`     | 2025-01-13          | [Link](slides/lab3-page-tables.pdf)  |
