@@ -59,6 +59,27 @@ printptr(uint64 x)
     consputc(digits[x >> (sizeof(uint64) * 8 - 4)]);
 }
 
+static inline uint64 get_return_addr(uint64 fp)
+{
+  return *((uint64*)(fp - 8));
+}
+
+static inline uint64 get_saved_fp(uint64 fp)
+{
+  return *((uint64*)(fp - 16));
+}
+
+void backtrace()
+{
+  uint64 fp = r_fp();                // fp when backtrace() called
+  const uint64 pg = PGROUNDDOWN(fp); // page of the kernel stack
+  printf("backtrace:\n");
+  do {
+    printf("%p\n", (void*)get_return_addr(fp));
+    fp = get_saved_fp(fp); // restore saved fp
+  } while (pg == PGROUNDDOWN(fp));
+}
+
 // Print to the console.
 int
 printf(char *fmt, ...)
@@ -165,6 +186,7 @@ panic(char *s)
   pr.locking = 0;
   printf("panic: ");
   printf("%s\n", s);
+  backtrace();
   panicked = 1; // freeze uart output from other CPUs
   for(;;)
     ;
