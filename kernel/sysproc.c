@@ -79,6 +79,20 @@ sys_kill(void)
   return kill(pid);
 }
 
+uint64 sys_sigalarm(void)
+{
+  int nticks;
+  void (*handler)(void);
+  argint(0, &nticks);
+  argaddr(1, (uint64*)&handler);
+  return sigalarm(nticks, handler);
+}
+
+uint64 sys_sigreturn(void)
+{
+  return sigreturn();
+}
+
 // return how many clock tick interrupts have occurred
 // since start.
 uint64

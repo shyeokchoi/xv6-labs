@@ -3,6 +3,7 @@
 #include "memlayout.h"
 #include "riscv.h"
 #include "spinlock.h"
+#include "syscall.h"
 #include "proc.h"
 #include "defs.h"
 
@@ -64,7 +65,11 @@ usertrap(void)
     // so enable only now that we're done with those registers.
     intr_on();
 
+    uint64 syscall_num = p->trapframe->a7;
     syscall();
+    if (syscall_num == SYS_sigreturn) {
+      p->trapframe->a0 = p->trapframe_dump.a0;
+    }
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {
@@ -76,9 +81,23 @@ usertrap(void)
   if(killed(p))
     exit(-1);
 
-  // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2)
+  // If this is a timer interrupt:
+  //   1. run the alarm handler if necessary.
+  //   2. give up the CPU.
+  if (which_dev == 2) {
+    if (p->alarm_set) {
+      ++(p->ticks_cnt);
+      if (p->ticks_cnt == p->alarm_interval_ticks) {
+        p->ticks_cnt = 0;
+        if (p->can_enter_alarm) {
+          p->can_enter_alarm = 0;
+          memmove(&p->trapframe_dump, p->trapframe, sizeof(struct trapframe));
+          p->trapframe->epc = (uint64)(p->alarm_handler);
+        }
+      }
+    }
     yield();
+  }
 
   usertrapret();
 }

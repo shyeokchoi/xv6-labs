@@ -146,6 +146,14 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+  // Initialize alarm related fields
+  memset(&p->trapframe_dump, 0, sizeof(struct trapframe));
+  p->alarm_set = 0;
+  p->can_enter_alarm = 0;
+  p->alarm_handler = 0;
+  p->ticks_cnt = 0;
+  p->alarm_interval_ticks = 0;
+
   return p;
 }
 
@@ -632,6 +640,24 @@ killed(struct proc *p)
   k = p->killed;
   release(&p->lock);
   return k;
+}
+
+int sigalarm(int nticks, void (*handler)(void))
+{
+  struct proc* p = myproc();
+  p->alarm_set = 1;
+  p->can_enter_alarm = 1;
+  p->alarm_handler = handler;
+  p->alarm_interval_ticks = nticks;
+  return 0;
+}
+
+int sigreturn()
+{
+  struct proc* p = myproc();
+  p->can_enter_alarm = 1;
+  memmove(p->trapframe, &p->trapframe_dump, sizeof(struct trapframe));
+  return 0;
 }
 
 // Copy to either a user address, or kernel address,
