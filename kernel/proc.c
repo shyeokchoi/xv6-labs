@@ -645,10 +645,20 @@ killed(struct proc *p)
 int sigalarm(int nticks, void (*handler)(void))
 {
   struct proc* p = myproc();
+  if (!nticks && !handler) {
+    p->alarm_set = 0;
+    p->can_enter_alarm = 0;
+    p->alarm_handler = 0;
+    p->ticks_cnt = 0;
+    p->alarm_interval_ticks = 0;
+    return 0;
+  }
   p->alarm_set = 1;
   p->can_enter_alarm = 1;
+  p->ticks_cnt = 0;
   p->alarm_handler = handler;
   p->alarm_interval_ticks = nticks;
+  memset(&p->trapframe_dump, 0, sizeof(struct trapframe));
   return 0;
 }
 
