@@ -77,8 +77,14 @@ usertrap(void)
     exit(-1);
 
   // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2)
+  if (which_dev == 2) {
     yield();
+  } else if (which_dev == 3) {
+    if (handle_cow(p->pagetable, PGROUNDDOWN(r_stval())) < 0) {
+      setkilled(p);
+      exit(-1);
+    }
+  }
 
   usertrapret();
 }
@@ -178,7 +184,9 @@ clockintr()
 
 // check if it's an external interrupt or software interrupt,
 // and handle it.
-// returns 2 if timer interrupt,
+// returns:
+// 3 if Store/AMO page fault,
+// 2 if timer interrupt,
 // 1 if other device,
 // 0 if not recognized.
 int
@@ -211,6 +219,8 @@ devintr()
     // timer interrupt.
     clockintr();
     return 2;
+  } else if (scause == 0xF) { // Store/AMO page fault
+    return 3;
   } else {
     return 0;
   }

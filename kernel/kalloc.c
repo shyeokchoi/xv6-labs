@@ -14,6 +14,11 @@ void freerange(void *pa_start, void *pa_end);
 extern char end[]; // first address after kernel.
                    // defined by kernel.ld.
 
+#define COW_REFCNT_IDX(pa) (((pa) - KERNBASE) / PGSIZE)
+
+struct spinlock reflock;
+int cow_refcnt[(PHYSTOP - KERNBASE) / PGSIZE];
+
 struct run {
   struct run *next;
 };
@@ -27,6 +32,8 @@ void
 kinit()
 {
   initlock(&kmem.lock, "kmem");
+  initlock(&reflock, "reflock");
+  memset(cow_refcnt, 0, sizeof(cow_refcnt));
   freerange(end, (void*)PHYSTOP);
 }
 
@@ -35,8 +42,10 @@ freerange(void *pa_start, void *pa_end)
 {
   char *p;
   p = (char*)PGROUNDUP((uint64)pa_start);
-  for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE)
+  for (; p + PGSIZE <= (char*)pa_end; p += PGSIZE) {
+    cow_refcnt[COW_REFCNT_IDX((uint64)p)] = 1;
     kfree(p);
+  }
 }
 
 // Free the page of physical memory pointed at by pa,
@@ -50,6 +59,15 @@ kfree(void *pa)
 
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
+
+  acquire(&reflock);
+  int refcnt_idx = COW_REFCNT_IDX((uint64)pa);
+  --cow_refcnt[refcnt_idx];
+  if (cow_refcnt[refcnt_idx] > 0) {
+    release(&reflock);
+    return;
+  }
+  release(&reflock);
 
   // Fill with junk to catch dangling refs.
   memset(pa, 1, PGSIZE);
@@ -72,11 +90,28 @@ kalloc(void)
 
   acquire(&kmem.lock);
   r = kmem.freelist;
-  if(r)
+  if (r) {
     kmem.freelist = r->next;
+  }
   release(&kmem.lock);
 
-  if(r)
+  if (r) {
     memset((char*)r, 5, PGSIZE); // fill with junk
+    acquire(&reflock);
+    ++cow_refcnt[COW_REFCNT_IDX((uint64)r)];
+    release(&reflock);
+  }
   return (void*)r;
+}
+
+void incr_refcnt(uint64 pa)
+{
+  acquire(&reflock);
+  ++cow_refcnt[COW_REFCNT_IDX((uint64)pa)];
+  release(&reflock);
+}
+
+inline int get_refcnt(uint64 pa)
+{
+  return cow_refcnt[COW_REFCNT_IDX((uint64)pa)];
 }
