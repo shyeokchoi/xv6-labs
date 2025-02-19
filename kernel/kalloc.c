@@ -61,9 +61,7 @@ kfree(void *pa)
     panic("kfree");
 
   acquire(&reflock);
-  int refcnt_idx = COW_REFCNT_IDX((uint64)pa);
-  --cow_refcnt[refcnt_idx];
-  if (cow_refcnt[refcnt_idx] > 0) {
+  if (--cow_refcnt[COW_REFCNT_IDX((uint64)pa)] > 0) {
     release(&reflock);
     return;
   }
