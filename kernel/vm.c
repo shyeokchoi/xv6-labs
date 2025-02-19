@@ -345,6 +345,9 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 int handle_cow(pagetable_t pagetable, uint64 va)
 {
   pte_t* pte;
+  if (va < 0 || va >= MAXVA) {
+    return -1;
+  }
   if ((pte = walk(pagetable, va, 0)) == 0) {
     return -1;
   }
@@ -369,6 +372,7 @@ int handle_cow(pagetable_t pagetable, uint64 va)
   *pte = 0;
   kfree((void*)pa);
   if (mappages(pagetable, va, PGSIZE, (uint64)newpage, flags) != 0) {
+    kfree((void*)newpage);
     return -1;
   }
 
