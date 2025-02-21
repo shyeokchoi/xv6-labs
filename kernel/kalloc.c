@@ -14,7 +14,7 @@ void freerange(void *pa_start, void *pa_end);
 extern char end[]; // first address after kernel.
                    // defined by kernel.ld.
 
-#define COW_REFCNT_IDX(pa) (((pa) - KERNBASE) / PGSIZE)
+#define PA2REFCNT_IDX(pa) (((pa) - KERNBASE) / PGSIZE)
 
 struct spinlock reflock;
 int cow_refcnt[(PHYSTOP - KERNBASE) / PGSIZE];
@@ -43,7 +43,7 @@ freerange(void *pa_start, void *pa_end)
   char *p;
   p = (char*)PGROUNDUP((uint64)pa_start);
   for (; p + PGSIZE <= (char*)pa_end; p += PGSIZE) {
-    cow_refcnt[COW_REFCNT_IDX((uint64)p)] = 1;
+    cow_refcnt[PA2REFCNT_IDX((uint64)p)] = 1;
     kfree(p);
   }
 }
@@ -61,7 +61,7 @@ kfree(void *pa)
     panic("kfree");
 
   acquire(&reflock);
-  if (--cow_refcnt[COW_REFCNT_IDX((uint64)pa)] > 0) {
+  if (--cow_refcnt[PA2REFCNT_IDX((uint64)pa)] > 0) {
     release(&reflock);
     return;
   }
@@ -96,7 +96,7 @@ kalloc(void)
   if (r) {
     memset((char*)r, 5, PGSIZE); // fill with junk
     acquire(&reflock);
-    ++cow_refcnt[COW_REFCNT_IDX((uint64)r)];
+    ++cow_refcnt[PA2REFCNT_IDX((uint64)r)];
     release(&reflock);
   }
   return (void*)r;
@@ -105,11 +105,11 @@ kalloc(void)
 void incr_refcnt(uint64 pa)
 {
   acquire(&reflock);
-  ++cow_refcnt[COW_REFCNT_IDX((uint64)pa)];
+  ++cow_refcnt[PA2REFCNT_IDX((uint64)pa)];
   release(&reflock);
 }
 
 inline int get_refcnt(uint64 pa)
 {
-  return cow_refcnt[COW_REFCNT_IDX((uint64)pa)];
+  return cow_refcnt[PA2REFCNT_IDX((uint64)pa)];
 }
