@@ -120,12 +120,31 @@ e1000_transmit(char *buf, int len)
 static void
 e1000_recv(void)
 {
-  //
-  // Your code here.
-  //
   // Check for packets that have arrived from the e1000
   // Create and deliver a buf for each packet (using net_rx()).
-  //
+
+  while (1) {
+    int idx = (regs[E1000_RDT] + 1) % RX_RING_SIZE;
+
+    if (!(rx_ring[idx].status & E1000_RXD_STAT_DD)) {
+      return;
+    }
+
+    if (rx_ring[idx].status & E1000_RXD_STAT_EOP) {
+      int len = rx_ring[idx].length;
+
+      net_rx(rx_bufs[idx], len);
+      rx_bufs[idx] = kalloc();
+      if (!rx_bufs[idx]) {
+        return;
+      }
+      memset(rx_bufs[idx], 0, len);
+      rx_ring[idx].status = 0;
+      rx_ring[idx].addr = (uint64)rx_bufs[idx];
+      rx_ring[idx].length = len;
+    }
+    regs[E1000_RDT] = idx;
+  }
 }
 
 void
