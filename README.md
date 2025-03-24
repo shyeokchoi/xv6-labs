@@ -15,10 +15,11 @@ Course Link: [MIT 6.1810 (2024 Fall)](https://pdos.csail.mit.edu/6.1810/2024/)
 
 ## Labs Overview
 
-| Number | Lab Name           | Branch Name | Date of the Session | Solution Slide Link                  |
-| ------ | ------------------ | ----------- | ------------------- | ------------------------------------ |
-| 1      | Utilities          | `util`      | 2024-12-17          | [Link](slides/lab1-utilities.pdf)    |
-| 2      | System Calls       | `syscall`   | 2024-12-30          | [Link](slides/lab2-system-calls.pdf) |
-| 3      | Page Tables        | `pgtbl`     | 2025-01-13          | [Link](slides/lab3-page-tables.pdf)  |
-| 4      | Traps              | `traps`     | 2025-02-05          | [Link](slides/lab4-traps.pdf)        |
-| 5      | Copy-on-Write Fork | `cow`       | 2025-02-21          | [Link](slides/lab5-cow.pdf)          |
+| Number | Lab Name           | Branch Name | Date of the Session | Solution Slide Link                    |
+| ------ | ------------------ | ----------- | ------------------- | -------------------------------------- |
+| 1      | Utilities          | `util`      | 2024-12-17          | [Link](slides/lab1-utilities.pdf)      |
+| 2      | System Calls       | `syscall`   | 2024-12-30          | [Link](slides/lab2-system-calls.pdf)   |
+| 3      | Page Tables        | `pgtbl`     | 2025-01-13          | [Link](slides/lab3-page-tables.pdf)    |
+| 4      | Traps              | `traps`     | 2025-02-05          | [Link](slides/lab4-traps.pdf)          |
+| 5      | Copy-on-Write Fork | `cow`       | 2025-02-21          | [Link](slides/lab5-cow.pdf)            |
+| 6      | Networking         | `net`       | 2025-03-14          | [Link](slides/lab6-network-driver.pdf) |
