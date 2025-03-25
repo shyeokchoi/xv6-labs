@@ -56,7 +56,7 @@ void runcmd(struct cmd*) __attribute__((noreturn));
 
 // Execute cmd.  Never returns.
 void
-runcmd(struct cmd *cmd)
+runcmd(struct cmd* cmd)
 {
   int p[2];
   struct backcmd *bcmd;

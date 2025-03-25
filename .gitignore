@@ -1,3 +1,4 @@
+.vscode/*
 *~
 _*
 *.o
@@ -25,3 +26,4 @@ barrier
 .DS_Store
 *.dSYM
 *.pcap
+fs.img.bk
