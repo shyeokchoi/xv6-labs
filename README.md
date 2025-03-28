@@ -23,3 +23,4 @@ Course Link: [MIT 6.1810 (2024 Fall)](https://pdos.csail.mit.edu/6.1810/2024/)
 | 4      | Traps              | `traps`     | 2025-02-05          | [Link](slides/lab4-traps.pdf)          |
 | 5      | Copy-on-Write Fork | `cow`       | 2025-02-21          | [Link](slides/lab5-cow.pdf)            |
 | 6      | Networking         | `net`       | 2025-03-14          | [Link](slides/lab6-network-driver.pdf) |
+| 7      | Locks              | `lock`      | 2025-03-28          | [Link](slides/lab7-locks.pdf)          |
