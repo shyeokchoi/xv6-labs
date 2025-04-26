@@ -149,6 +149,10 @@ int             fetchstr(uint64, char*, int);
 int             fetchaddr(uint64, uint64*);
 void            syscall();
 
+// sysfile.c
+int map_mmap(struct proc*, uint64);
+int filewrite_offset(struct file* f, uint64 addr, int n, int offset);
+
 // trap.c
 extern uint     ticks;
 void            trapinit(void);

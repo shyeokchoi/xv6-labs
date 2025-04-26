@@ -503,3 +503,211 @@ sys_pipe(void)
   }
   return 0;
 }
+
+// sys_mmap: create a new anonymous or file‑backed mapping at the end
+// of the process’s address space.
+//   addr:   hint (ignored; mapping is always placed at p->sz)
+//   len:    requested size in bytes
+//   prot:   protection flags (PROT_READ, PROT_WRITE, …)
+//   flags:  MAP_SHARED or MAP_PRIVATE
+//   fd:     file descriptor (for shared/private file mappings)
+//   offset: offset within file to map
+//
+// For MAP_SHARED+PROT_WRITE, the file must be open writable.
+// On success: allocates a VMA, rounds len to pages, extends p->sz,
+//               and returns the new mapping’s start address.
+// On failure: returns –1.
+uint64 sys_mmap(void)
+{
+  uint64 addr;
+  int len;
+  int prot;
+  int flags;
+  int fd;
+  struct file* f;
+  int offset;
+  argaddr(0, &addr);
+  argint(1, &len);
+  argint(2, &prot);
+  argint(3, &flags);
+  if (argfd(4, &fd, &f) < 0) {
+    return -1;
+  }
+  argint(5, &offset);
+
+  if (flags == MAP_SHARED && !f->writable && (prot & PROT_WRITE)) {
+    return -1;
+  }
+
+  struct proc* p = myproc();
+  for (int i = 0; i < MAXVMA; ++i) {
+    struct vma* v = &(p->vma_array[i]);
+    if (!v->valid) {
+      v->valid = 1;
+      v->start = p->sz;
+      v->len = len;
+      v->protection = prot;
+      v->flags = flags;
+      v->offset = offset;
+      v->file = filedup(f);
+      len = PGROUNDUP(len);
+      p->sz += len;
+      v->end = p->sz;
+      return v->start;
+    }
+  }
+
+  return -1;
+}
+
+// sys_munmap: unmap [addr, addr+length) from the calling process’s address space.
+// - Rounds addr down and length up to full pages.
+// - Finds the VMA containing the start page.
+// - If MAP_SHARED, writes back any unmapped pages to the file.
+// - Removes pages from the page table in page‑sized chunks.
+// - Adjusts or frees the VMA accordingly.
+// Returns 0 on success.
+uint64 sys_munmap(void)
+{
+  uint64 addr;
+  int length;
+  int npages;
+  struct proc* p = myproc();
+
+  argaddr(0, &addr);
+  argint(1, &length);
+
+  uint64 a = PGROUNDDOWN(addr);
+  int len = PGROUNDUP(length);
+  npages = len / PGSIZE;
+
+  for (int i = 0; i < MAXVMA; i++) {
+    struct vma* v = &p->vma_array[i];
+    if (!v->valid || a < v->start || a >= v->end) {
+      continue;
+    }
+
+    if (a == v->start) {
+      if (len >= v->len) {
+        // whole VMA is being unmapped
+        if (v->flags & MAP_SHARED) {
+          filewrite_offset(v->file, v->start, v->len, v->offset);
+        }
+        uvmunmap(p->pagetable, v->start, v->len / PGSIZE, 1);
+        fileclose(v->file);
+        v->valid = 0;
+        v->file = 0;
+        v->start = 0;
+        v->end = 0;
+        v->len = 0;
+        v->offset = 0;
+        v->protection = 0;
+        v->flags = 0;
+      } else {
+        // only the first part of the VMA
+        if (v->flags & MAP_SHARED) {
+          filewrite_offset(v->file, v->start, len, v->offset);
+        }
+        uvmunmap(p->pagetable, v->start, npages, 1);
+        v->start += len;
+        v->offset += len;
+        v->len -= len;
+        v->end = v->start + v->len;
+      }
+    } else {
+      // middle of the VMA
+      if (v->flags & MAP_SHARED) {
+        filewrite_offset(v->file, a, len, v->offset);
+      }
+      uvmunmap(p->pagetable, a, npages, 1);
+      v->len -= len;
+      v->end = v->start + v->len;
+    }
+  }
+
+  return 0;
+}
+
+// lazy mapping the memory when page fault.
+int map_mmap(struct proc* p, uint64 va_fault)
+{
+  for (int i = 0; i < MAXVMA; i++) {
+    struct vma* v = &p->vma_array[i];
+
+    if (!v->valid) {
+      continue;
+    }
+    if (va_fault < v->end && va_fault >= v->start) {
+      uint64 va_page = PGROUNDDOWN(va_fault);
+      uint64 file_off = va_page - v->start + v->offset;
+
+      char* kva = kalloc();
+      if (kva == 0) {
+        return -1;
+      }
+      memset(kva, 0, PGSIZE);
+
+      uint64 pa = (uint64)kva;
+      uint flags = (v->protection << 1) | PTE_U | PTE_A | PTE_D;
+
+      if (mappages(p->pagetable, va_page, PGSIZE, pa, flags) != 0) {
+        kfree(kva);
+        return -1;
+      }
+
+      ilock(v->file->ip);
+      if (readi(v->file->ip, 0, (uint64)kva, file_off, PGSIZE) < 0) {
+        iunlock(v->file->ip);
+        kfree(kva);
+        uvmunmap(p->pagetable, va_page, 1, 0);
+        return -1;
+      }
+      iunlock(v->file->ip);
+      return 0;
+    }
+  }
+  return -1;
+}
+
+// Write up to `n` bytes from user buffer at virtual address `addr`
+// into file `f`, starting at file‑offset `offset`.
+// Returns the number of bytes written (== n) on success, or -1 on error.
+int filewrite_offset(struct file* f, uint64 addr, int n, int offset)
+{
+  if (f->writable == 0 || f->type != FD_INODE) {
+    return -1;
+  }
+
+  // current file size
+  int remain = f->ip->size - offset;
+  if (remain <= 0) { // offset is beyond EOF
+    return -1;
+  }
+  if (n > remain) { // don't write past EOF
+    n = remain;
+  }
+
+  int max = ((MAXOPBLOCKS - 1 - 1 - 2) / 2) * BSIZE;
+  int i = 0;
+  int r;
+
+  while (i < n) {
+    int n1 = n - i;
+    if (n1 > max) {
+      n1 = max;
+    }
+
+    begin_op();
+    ilock(f->ip);
+    r = writei(f->ip, 1 /*USER buf*/, addr + i, offset, n1);
+    iunlock(f->ip);
+    end_op();
+
+    if (r != n1) {
+      break;
+    }
+    offset += r;
+    i += r;
+  }
+  return (i == n) ? n : -1;
+}

@@ -81,6 +81,20 @@ struct trapframe {
 
 enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
+#define MAXVMA 16
+
+// virtual memory area
+struct vma {
+  int valid;
+  uint64 start;
+  uint64 end;
+  int len;
+  int protection;
+  int flags;
+  struct file* file;
+  int offset;
+};
+
 // Per-process state
 struct proc {
   struct spinlock lock;
@@ -103,5 +117,7 @@ struct proc {
   struct context context;      // swtch() here to run process
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
+  struct vma vma_array[MAXVMA];
+
   char name[16];               // Process name (debugging)
 };

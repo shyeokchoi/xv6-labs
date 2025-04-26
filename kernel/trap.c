@@ -5,6 +5,7 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "fcntl.h"
 
 struct spinlock tickslock;
 uint ticks;
@@ -67,6 +68,39 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+  } else if (r_scause() == 0xd || r_scause() == 0xf) {
+    // lazy mmap page-fault handling (load=0xd, store=0xf)
+    uint64 fault_va = r_stval();
+    int is_write = (r_scause() == 0xf);
+    int is_allowed = 0;
+
+    // check if fault_va lies within a valid VMA and has appropriate permissions
+    for (int i = 0; i < MAXVMA; i++) {
+      struct vma* v = &p->vma_array[i];
+      if (v->valid && fault_va >= v->start && fault_va < v->end) {
+        if (is_write) {
+          // write fault: allowed only if VMA has write permission
+          if (v->protection & PROT_WRITE) {
+            is_allowed = 1;
+          }
+        } else {
+          // read fault: always allowed for VMA
+          is_allowed = 1;
+        }
+      }
+    }
+
+    if (is_allowed) {
+      if (map_mmap(p, fault_va) < 0) {
+        // lazy-map failed unexpectedly
+        printf("usertrap(): unexpected scause %lx pid=%d\n", r_scause(), p->pid);
+        printf("            sepc=0x%lx stval=0x%lx\n", r_sepc(), r_stval());
+        setkilled(p);
+      }
+    } else {
+      // e.g., write to read-only mmap region -> terminate
+      setkilled(p);
+    }
   } else {
     printf("usertrap(): unexpected scause 0x%lx pid=%d\n", r_scause(), p->pid);
     printf("            sepc=0x%lx stval=0x%lx\n", r_sepc(), r_stval());

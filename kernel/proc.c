@@ -308,6 +308,16 @@ fork(void)
       np->ofile[i] = filedup(p->ofile[i]);
   np->cwd = idup(p->cwd);
 
+  // copy parent process's VMA to the child
+  for (int i = 0; i < MAXVMA; ++i) {
+    if (p->vma_array[i].valid) {
+      memmove(&(np->vma_array[i]), &(p->vma_array[i]), sizeof(struct vma));
+      filedup(p->vma_array[i].file);
+    } else {
+      np->vma_array[i].valid = 0;
+    }
+  }
+
   safestrcpy(np->name, p->name, sizeof(p->name));
 
   pid = np->pid;
@@ -357,6 +367,19 @@ exit(int status)
       struct file *f = p->ofile[fd];
       fileclose(f);
       p->ofile[fd] = 0;
+    }
+  }
+
+  // Clean up the VMA
+  for (int i = 0; i < MAXVMA; i++) {
+    struct vma* v = &(p->vma_array[i]);
+    // if the VMA is not empty
+    if (v->valid) {
+      // p->pagetable : process page table
+      // v->start : start address of vma
+      // v->length/PGSIZE : number of pages that vma occupies
+      uvmunmap(p->pagetable, v->start, v->len / PGSIZE, 1);
+      v->valid = 0;
     }
   }
 
