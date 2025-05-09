@@ -347,6 +347,9 @@ ping1()
     }
 
     if(memcmp(buf, ibuf, 3) != 0){
+      buf[3] = '\0';
+      ibuf[3] = '\0';
+      printf("ping1: original buffer contains: %s / response buffer contains: %s\n", buf, ibuf);
       printf("ping1: wrong content\n");
       return 0;
     }

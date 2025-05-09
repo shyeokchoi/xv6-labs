@@ -10,6 +10,35 @@
 #include "file.h"
 #include "net.h"
 
+#define UPORT_BUCKET_SZ 101
+#define UPORT_HASH(port) ((port) % (UPORT_BUCKET_SZ))
+#define MAX_PENDING_PACKETS 16
+
+struct upacket {
+  struct upacket* next;
+  uint64 buf;
+  int len;
+  int src_ip;
+  uint16 src_port;
+};
+
+struct uport {
+  struct uport* next;
+  uint16 port;
+
+  // below protected by the spinlock
+  struct spinlock lk;
+  int size;
+  struct upacket* head;
+  struct upacket* tail;
+};
+
+// table to manage udp
+struct utable {
+  struct spinlock lk;
+  struct uport* ports[UPORT_BUCKET_SZ];
+};
+
 // xv6's ethernet and IP addresses
 static uint8 local_mac[ETHADDR_LEN] = { 0x52, 0x54, 0x00, 0x12, 0x34, 0x56 };
 static uint32 local_ip = MAKE_IP_ADDR(10, 0, 2, 15);
@@ -18,13 +47,29 @@ static uint32 local_ip = MAKE_IP_ADDR(10, 0, 2, 15);
 static uint8 host_mac[ETHADDR_LEN] = { 0x52, 0x55, 0x0a, 0x00, 0x02, 0x02 };
 
 static struct spinlock netlock;
+static struct utable utab;
 
 void
 netinit(void)
 {
   initlock(&netlock, "netlock");
+  initlock(&utab.lk, "utablelock");
+  for (int i = 0; i < UPORT_BUCKET_SZ; ++i) {
+    utab.ports[i] = 0;
+  }
 }
 
+// should hold utab.lk when called
+struct uport* find_udp_port(int port)
+{
+  int hash = UPORT_HASH(port);
+  for (struct uport* handle = utab.ports[hash]; handle != 0; handle = handle->next) {
+    if (handle->port == port) {
+      return handle;
+    }
+  }
+  return 0;
+}
 
 //
 // bind(int port)
@@ -34,11 +79,36 @@ netinit(void)
 uint64
 sys_bind(void)
 {
-  //
-  // Your code here.
-  //
+  int port;
 
-  return -1;
+  argint(0, &port);
+
+  acquire(&utab.lk);
+  if (find_udp_port(port)) {
+    printf("port %d is already being used.\n", port);
+    release(&utab.lk);
+    return -1;
+  }
+
+  int hash = UPORT_HASH(port);
+  struct uport* up = utab.ports[hash];
+
+  struct uport* new_port = kalloc();
+  if (!new_port) {
+    release(&utab.lk);
+    return -1;
+  }
+
+  memset((void*)new_port, 0, sizeof(struct uport));
+  new_port->next = up;
+  utab.ports[hash] = new_port;
+  new_port->port = port;
+  initlock(&new_port->lk, "uportlock");
+  new_port->size = 0;
+  new_port->head = 0;
+  new_port->tail = 0;
+  release(&utab.lk);
+  return 0;
 }
 
 //
@@ -49,9 +119,40 @@ sys_bind(void)
 uint64
 sys_unbind(void)
 {
-  //
-  // Optional: Your code here.
-  //
+  int port;
+
+  argint(0, &port);
+
+  acquire(&utab.lk);
+  int hash = UPORT_HASH(port);
+  struct uport* prev = 0;
+  struct uport* up = 0;
+  for (struct uport* handle = utab.ports[hash]; handle != 0; handle = handle->next) {
+    if (handle->port == port) {
+      up = handle;
+      break;
+    }
+    prev = handle;
+  }
+
+  if (!up) {
+    printf("port %d is not bound.\n", port);
+    return -1;
+  }
+  for (struct upacket* p = up->head; p != 0;) {
+    struct upacket* next = p->next;
+    kfree((void*)p->buf);
+    kfree(p);
+    p = next;
+  }
+
+  if (!prev) {
+    utab.ports[hash] = up->next;
+  } else {
+    prev->next = up->next;
+  }
+  release(&utab.lk);
+  kfree(up);
 
   return 0;
 }
@@ -74,10 +175,70 @@ sys_unbind(void)
 uint64
 sys_recv(void)
 {
-  //
-  // Your code here.
-  //
-  return -1;
+  int dport;      // destination host port number
+  uint64 src;     // source host IP address
+  uint64 sport;   // source host port number
+  uint64 bufaddr; // payload buffer address
+  int maxlen;     // payload length
+
+  argint(0, &dport);
+  argaddr(1, &src);
+  argaddr(2, &sport);
+  argaddr(3, &bufaddr);
+  argint(4, &maxlen);
+
+  struct proc* p = myproc();
+
+  acquire(&utab.lk);
+  struct uport* up = find_udp_port(dport);
+
+  if (!up) {
+    release(&utab.lk);
+    return -1;
+  }
+
+  acquire(&up->lk);
+  release(&utab.lk);
+
+  // wait until packet is available
+  while (!up->size) {
+    if (killed(p)) {
+      release(&up->lk);
+      return -1;
+    }
+    sleep(up, &up->lk);
+  }
+
+  struct upacket* packet = up->head;
+
+  int len_moved = maxlen;
+  if (packet->len < len_moved) {
+    len_moved = packet->len;
+  }
+
+  if (copyout(p->pagetable, src, (char*)&packet->src_ip, sizeof(packet->src_ip)) < 0
+      || copyout(p->pagetable, sport, (char*)&packet->src_port, sizeof(packet->src_port)) < 0
+      || copyout(p->pagetable, bufaddr, (char*)packet->buf, len_moved) < 0) {
+    release(&up->lk);
+    kfree((void*)packet->buf);
+    kfree(packet);
+    return -1;
+  }
+
+  // cleanup the buffered packet
+  --(up->size);
+  if (!up->size) {
+    up->head = 0;
+    up->tail = 0;
+  } else {
+    up->head = packet->next;
+  }
+
+  release(&up->lk);
+  kfree((void*)packet->buf);
+  kfree(packet);
+
+  return len_moved;
 }
 
 // This code is lifted from FreeBSD's ping.c, and is copyright by the Regents
@@ -117,16 +278,17 @@ in_cksum(const unsigned char *addr, int len)
 
 //
 // send(int sport, int dst, int dport, char *buf, int len)
+// 0 on success, -1 on failure
 //
 uint64
 sys_send(void)
 {
   struct proc *p = myproc();
-  int sport;
-  int dst;
-  int dport;
-  uint64 bufaddr;
-  int len;
+  int sport;      // source host port number
+  int dst;        // destination host IP address
+  int dport;      // destination host port number
+  uint64 bufaddr; // payload buffer address
+  int len;        // payload length
 
   argint(0, &sport);
   argint(1, &dst);
@@ -188,10 +350,64 @@ ip_rx(char *buf, int len)
     printf("ip_rx: received an IP packet\n");
   seen_ip = 1;
 
-  //
-  // Your code here.
-  //
-  
+  struct eth* eth_hdr = (struct eth*)buf;
+  struct ip* ip_hdr = (struct ip*)(eth_hdr + 1);
+  struct udp* udp_hdr = (struct udp*)(ip_hdr + 1);
+
+  if (ip_hdr->ip_p != IPPROTO_UDP) {
+    kfree(buf);
+    return;
+  }
+
+  acquire(&utab.lk);
+  struct uport* up = find_udp_port(ntohs(udp_hdr->dport));
+
+  if (!up) {
+    // no corresponding port
+    release(&utab.lk);
+    kfree(buf);
+    return;
+  }
+
+  acquire(&up->lk);
+  release(&utab.lk);
+
+  if (up->size >= MAX_PENDING_PACKETS) {
+    release(&up->lk);
+    kfree(buf);
+    return;
+  }
+
+  struct upacket* np = kalloc();
+  char* payload = kalloc();
+  if (!np || !payload) {
+    release(&up->lk);
+    kfree(buf);
+    return;
+  }
+
+  uint16 payload_len = ntohs(udp_hdr->ulen) - sizeof(struct udp);
+  memmove(payload, (void*)(udp_hdr + 1), payload_len);
+  memset((void*)np, 0, sizeof(struct upacket));
+
+  np->buf = (uint64)payload;
+  np->len = payload_len;
+  np->src_ip = ntohl(ip_hdr->ip_src);
+  np->src_port = ntohs(udp_hdr->sport);
+
+  if (!up->size) {
+    up->head = np;
+    up->tail = np;
+    np->next = 0;
+  } else {
+    up->tail->next = np;
+    up->tail = np;
+    np->next = 0;
+  }
+  ++(up->size);
+  wakeup(up);
+  release(&up->lk);
+  kfree(buf);
 }
 
 //

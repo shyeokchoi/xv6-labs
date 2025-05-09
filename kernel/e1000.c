@@ -106,17 +106,18 @@ e1000_transmit(char *buf, int len)
 
   // free the last buffer
   if (tx_bufs[tail]) {
-    kfree(tx_bufs);
+    kfree(tx_bufs[tail]);
   }
 
   tx_bufs[tail] = buf;
   tx_ring[tail].addr = (uint64)buf;
   tx_ring[tail].length = len;
-  tx_ring[tail].cmd = E1000_TXD_CMD_EOP;
+  tx_ring[tail].cmd = E1000_TXD_CMD_RS | E1000_TXD_CMD_EOP;
   tx_ring[tail].status = 0;
 
   // update ring location
   regs[E1000_TDT] = (tail + 1) % TX_RING_SIZE;
+
   release(&e1000_lock);
   return 0;
 }
@@ -151,7 +152,6 @@ e1000_recv(void)
       // reset the rx_ring[idx] status
       rx_ring[idx].status = 0;
       rx_ring[idx].addr = (uint64)rx_bufs[idx];
-      rx_ring[idx].length = len;
     }
     regs[E1000_RDT] = idx;
   }
