@@ -27,19 +27,16 @@ static void barrier()
   // then increment bstate.round.
   pthread_mutex_lock(&bstate.barrier_mutex);
 
+  int round_on_entry = bstate.round;
   ++bstate.nthread;
-  if (bstate.nthread < nthread) {
-    pthread_cond_wait(&bstate.barrier_cond, &bstate.barrier_mutex);
-  } else {
-    ++bstate.round;
+  if (bstate.nthread == nthread) {
+    bstate.nthread = 0;
+    bstate.round++;
     pthread_cond_broadcast(&bstate.barrier_cond);
-  }
-  --bstate.nthread;
-
-  if (bstate.nthread != 0) {
-    pthread_cond_wait(&bstate.barrier_cond, &bstate.barrier_mutex);
   } else {
-    pthread_cond_broadcast(&bstate.barrier_cond);
+    while (bstate.round == round_on_entry) {
+      pthread_cond_wait(&bstate.barrier_cond, &bstate.barrier_mutex);
+    }
   }
   pthread_mutex_unlock(&bstate.barrier_mutex);
 }
